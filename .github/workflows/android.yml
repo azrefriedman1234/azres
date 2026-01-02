@@ -23,25 +23,30 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install SDK/NDK (use NDK r25c)
+      - name: Install SDK/NDK (NDK r23b for ffmpeg-kit cpu-features)
         run: |
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653"
-          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;23.1.7779620"
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/23.1.7779620" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/23.1.7779620" >> $GITHUB_ENV
 
       - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build clang make pkg-config unzip zip yasm nasm
+          sudo apt-get install -y cmake ninja-build clang make pkg-config unzip zip yasm nasm autoconf automake libtool gettext
 
       - name: Ensure Gradle Wrapper + chmod
         run: |
-          if [ ! -f "./gradlew" ]; then
-            gradle wrapper --gradle-version 8.6
-          fi
           chmod +x ./gradlew scripts/*.sh
 
       - name: Build FFmpegKit (from source)
         run: ./scripts/build_ffmpegkit_android.sh
+
+      - name: Upload ffmpeg-kit build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpegkit-build-log
+          path: third_party/ffmpeg-kit/build.log
 
       - name: Build TDLib (from source)
         run: ./scripts/build_tdlib_android.sh
