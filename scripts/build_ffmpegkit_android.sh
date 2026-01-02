@@ -8,34 +8,31 @@ cd "$FF"
 export ANDROID_HOME="${ANDROID_SDK_ROOT}"
 export ANDROID_NDK_HOME="${ANDROID_NDK_ROOT}"
 
-echo "== FFmpegKit android.sh help =="
+echo "== android.sh version/help =="
+./android.sh --version || true
 ./android.sh --help || true
 
-# ניקוי
+# ניקוי מלא
 rm -rf ./.tmp ./prebuilt ./build ./android/.gradle 2>/dev/null || true
 
-# Build arm64 בלבד + ספריות מינימליות יציבות (בלי --full כדי להימנע מ-libiconv/tesseract/sdl וכו')
-./android.sh \
-  --enable-gpl \
-  --disable-arm-v7a \
-  --disable-arm-v7a-neon \
-  --disable-x86 \
-  --disable-x86-64 \
-  --api-level=26 \
-  --enable-android-zlib \
-  --enable-android-media-codec \
-  --enable-openssl \
-  --enable-freetype \
-  --enable-fontconfig \
-  --enable-fribidi \
-  --enable-libass
+# הכי בסיסי: arm64 בלבד, בלי ספריות חיצוניות בכלל
+CMD=( ./android.sh
+  --disable-arm-v7a
+  --disable-arm-v7a-neon
+  --disable-x86
+  --disable-x86-64
+  --api-level=26
+)
+
+echo "== Running: ${CMD[*]} =="
+"${CMD[@]}"
 
 mkdir -p "$ROOT/app/libs"
 
 AAR_PATH="$(find prebuilt -type f -name "*.aar" | head -n 1)"
 if [ -z "${AAR_PATH}" ]; then
-  echo "FFmpegKit AAR not found under prebuilt/"
-  echo "Dumping last 200 lines of build.log if present:"
+  echo "❌ FFmpegKit AAR not found under prebuilt/"
+  echo "== Tail build.log =="
   tail -n 200 build.log 2>/dev/null || true
   exit 1
 fi
