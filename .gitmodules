@@ -1,0 +1,6 @@
+[submodule "third_party/td"]
+	path = third_party/td
+	url = https://github.com/tdlib/td.git
+[submodule "third_party/ffmpeg-kit"]
+	path = third_party/ffmpeg-kit
+	url = https://github.com/arthenica/ffmpeg-kit.git
