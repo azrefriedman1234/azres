@@ -9,32 +9,36 @@ export ANDROID_HOME="${ANDROID_SDK_ROOT}"
 export ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT}"
 export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_NDK_ROOT}"
 
-echo "== Using NDK =="
+echo "== PATH =="
+echo "$PATH"
+echo "== cmake --version =="
+cmake --version || true
+echo "== NDK =="
 echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
 echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
-ls -la "$ANDROID_NDK_HOME"/ndk-build || true
-
-echo "== android.sh help =="
-./android.sh --help || true
+ls -la "$ANDROID_NDK_HOME/ndk-build" || true
 
 rm -rf ./.tmp ./prebuilt ./build ./android/.gradle 2>/dev/null || true
 
-# הכי בסיסי + arm64 בלבד
+set +e
 ./android.sh \
   --disable-arm-v7a \
   --disable-arm-v7a-neon \
   --disable-x86 \
   --disable-x86-64 \
   --api-level=26
+RC=$?
+set -e
 
-mkdir -p "$ROOT/app/libs"
-
-AAR_PATH="$(find prebuilt -type f -name "*.aar" | head -n 1)"
-if [ -z "${AAR_PATH}" ]; then
-  echo "❌ FFmpegKit AAR not found. Tail build.log:"
+if [ $RC -ne 0 ]; then
+  echo "❌ ffmpeg-kit build failed (rc=$RC). Tail build.log:"
   tail -n 200 build.log 2>/dev/null || true
-  exit 1
+  exit $RC
 fi
 
+mkdir -p "$ROOT/app/libs"
+AAR_PATH="$(find prebuilt -type f -name "*.aar" | head -n 1)"
+[ -n "$AAR_PATH" ] || { echo "AAR not found"; exit 1; }
+
 cp -v "$AAR_PATH" "$ROOT/app/libs/ffmpeg-kit-built.aar"
-echo "✅ Copied FFmpegKit AAR to app/libs/ffmpeg-kit-built.aar"
+echo "✅ Copied FFmpegKit AAR"
