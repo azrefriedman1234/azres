@@ -5,25 +5,31 @@ FF="$ROOT/third_party/ffmpeg-kit"
 
 cd "$FF"
 
-# הצגת help (ללוגים) כדי להבין מה הגרסה תומכת
-./android.sh --help || true
-
 export ANDROID_HOME="${ANDROID_SDK_ROOT}"
 export ANDROID_NDK_HOME="${ANDROID_NDK_ROOT}"
 
-# ניקוי ידני במקום --rebuild
-rm -rf ./.tmp ./prebuilt ./build ./android/.gradle || true
+echo "== FFmpegKit android.sh help =="
+./android.sh --help || true
 
-# בנייה "full-gpl" (אופציות נפוצות בגרסאות שונות):
-# אם גרסה שלך לא מכירה אחת מהן, היא תיכשל—אבל לפחות נקבל log ברור.
-./android.sh --enable-gpl --enable-full || ./android.sh --full --gpl || ./android.sh
+# ניקוי ידני (במקום דגלים שלא קיימים)
+rm -rf ./.tmp ./prebuilt ./build ./android/.gradle 2>/dev/null || true
+
+# בנייה לטאבלט: arm64 בלבד (חוסך זמן ומונע cpu-features ב-armv7 בהרבה מקרים)
+./android.sh \
+  --enable-gpl \
+  --full \
+  --disable-arm-v7a \
+  --disable-arm-v7a-neon \
+  --disable-x86 \
+  --disable-x86-64 \
+  --api-level=26
 
 mkdir -p "$ROOT/app/libs"
 
-# מציאת AAR שנבנה והעתקה בשם קבוע
-AAR_PATH="$(find . -type f -name "*.aar" | head -n 1)"
+AAR_PATH="$(find prebuilt -type f -name "*.aar" | head -n 1)"
 if [ -z "${AAR_PATH}" ]; then
-  echo "FFmpegKit AAR not found after build."
+  echo "FFmpegKit AAR not found under prebuilt/ . Listing:"
+  find prebuilt -maxdepth 3 -type f || true
   exit 1
 fi
 
