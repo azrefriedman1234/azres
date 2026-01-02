@@ -11,25 +11,32 @@ export ANDROID_NDK_HOME="${ANDROID_NDK_ROOT}"
 echo "== FFmpegKit android.sh help =="
 ./android.sh --help || true
 
-# ניקוי ידני (במקום דגלים שלא קיימים)
+# ניקוי
 rm -rf ./.tmp ./prebuilt ./build ./android/.gradle 2>/dev/null || true
 
-# בנייה לטאבלט: arm64 בלבד (חוסך זמן ומונע cpu-features ב-armv7 בהרבה מקרים)
+# Build arm64 בלבד + ספריות מינימליות יציבות (בלי --full כדי להימנע מ-libiconv/tesseract/sdl וכו')
 ./android.sh \
   --enable-gpl \
-  --full \
   --disable-arm-v7a \
   --disable-arm-v7a-neon \
   --disable-x86 \
   --disable-x86-64 \
-  --api-level=26
+  --api-level=26 \
+  --enable-android-zlib \
+  --enable-android-media-codec \
+  --enable-openssl \
+  --enable-freetype \
+  --enable-fontconfig \
+  --enable-fribidi \
+  --enable-libass
 
 mkdir -p "$ROOT/app/libs"
 
 AAR_PATH="$(find prebuilt -type f -name "*.aar" | head -n 1)"
 if [ -z "${AAR_PATH}" ]; then
-  echo "FFmpegKit AAR not found under prebuilt/ . Listing:"
-  find prebuilt -maxdepth 3 -type f || true
+  echo "FFmpegKit AAR not found under prebuilt/"
+  echo "Dumping last 200 lines of build.log if present:"
+  tail -n 200 build.log 2>/dev/null || true
   exit 1
 fi
 
