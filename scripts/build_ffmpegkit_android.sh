@@ -17,40 +17,46 @@ FLAGS=(
   --api-level=26
 )
 
+dump_logs () {
+  echo "==================== ffmpeg-kit build.log (last 300 lines) ===================="
+  tail -n 300 build.log 2>/dev/null || true
+  echo "==================== cpu-features section (grep) ============================="
+  grep -n "cpu-features" -n build.log 2>/dev/null | tail -n 80 || true
+  echo "==============================================================================="
+}
+
 rm -rf ./prebuilt ./build ./android/.gradle 2>/dev/null || true
 
-# -------------------------------------------------
-# 1) Run once ONLY to download sources (allow fail)
-# -------------------------------------------------
+# 1) ריצה ראשונה כדי שיוריד מקורות (יכול להיכשל)
 set +e
 ./android.sh "${FLAGS[@]}"
+RC=$?
 set -e
 
-# -------------------------------------------------
-# 2) Patch cpu-features CMakeLists.txt
-# -------------------------------------------------
+# 2) Patch לקובץ הנכון
 CPU_CMAKE="src/cpu-features/CMakeLists.txt"
-
 if [ -f "$CPU_CMAKE" ]; then
-  echo "Patching $CPU_CMAKE"
   sed -i 's/cmake_minimum_required(VERSION 3\.[0-4])/cmake_minimum_required(VERSION 3.5)/' "$CPU_CMAKE"
-else
-  echo "❌ cpu-features CMakeLists.txt not found!"
-  exit 1
 fi
 
-# -------------------------------------------------
-# 3) Rebuild cpu-features explicitly
-# -------------------------------------------------
+# 3) ריצה שנייה עם rebuild cpu-features
+set +e
 ./android.sh "${FLAGS[@]}" --rebuild-cpu-features
+RC2=$?
+set -e
 
-# -------------------------------------------------
-# 4) Collect AAR
-# -------------------------------------------------
+if [ $RC2 -ne 0 ]; then
+  echo "❌ ffmpeg-kit failed (rc=$RC2)"
+  dump_logs
+  exit $RC2
+fi
+
+# 4) העתקת AAR
 mkdir -p "$ROOT/app/libs"
 AAR_PATH="$(find prebuilt -type f -name "*.aar" | head -n 1)"
 if [ -z "$AAR_PATH" ]; then
   echo "❌ FFmpegKit AAR not found"
+  dump_logs
   exit 1
 fi
 
