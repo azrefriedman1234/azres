@@ -2,24 +2,30 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FF="$ROOT/third_party/ffmpeg-kit"
-
 cd "$FF"
 
 export ANDROID_HOME="${ANDROID_SDK_ROOT}"
 export ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT}"
 export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_NDK_ROOT}"
 
-echo "== PATH =="
-echo "$PATH"
-echo "== cmake --version =="
+# 🔒 נועלים cmake לקובץ של ה-SDK
+export CMAKE_BIN="${ANDROID_SDK_ROOT}/cmake/3.22.1/bin/cmake"
+
+echo "== cmake sanity =="
+echo "CMAKE_BIN=$CMAKE_BIN"
+ls -la "$CMAKE_BIN" || true
+which cmake || true
 cmake --version || true
-echo "== NDK =="
-echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
-echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
-ls -la "$ANDROID_NDK_HOME/ndk-build" || true
+"$CMAKE_BIN" --version || true
+
+# 🔥 עוקף בעיות מדיניות בגרסאות cmake חדשות אם משהו בכל זאת משתמש בהן
+export CMAKE_ARGS="-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+
+echo "CMAKE_ARGS=$CMAKE_ARGS"
 
 rm -rf ./.tmp ./prebuilt ./build ./android/.gradle 2>/dev/null || true
 
+# arm64 בלבד, בסיסי
 set +e
 ./android.sh \
   --disable-arm-v7a \
@@ -32,7 +38,7 @@ set -e
 
 if [ $RC -ne 0 ]; then
   echo "❌ ffmpeg-kit build failed (rc=$RC). Tail build.log:"
-  tail -n 200 build.log 2>/dev/null || true
+  tail -n 250 build.log 2>/dev/null || true
   exit $RC
 fi
 
