@@ -17,47 +17,42 @@ FLAGS=(
   --api-level=26
 )
 
-echo "NDK=$ANDROID_NDK"
-echo "which cmake: $(which cmake || true)"
-cmake --version || true
+rm -rf ./prebuilt ./build ./android/.gradle 2>/dev/null || true
 
-# ---------------------------------------------------------
-# 🔥 Inject policy flag into ALL cmake calls in ffmpeg-kit scripts
-# ---------------------------------------------------------
-echo "== Patching ffmpeg-kit scripts to add -DCMAKE_POLICY_VERSION_MINIMUM=3.5 to cmake calls =="
-PATCHED=0
-
-# כל שורה שמתחילה ב-cmake (אחרי רווחים) -> מוסיפים את הדגל אם לא קיים
-while IFS= read -r -d '' f; do
-  if grep -qE '^[[:space:]]*cmake[[:space:]]' "$f" && ! grep -q 'CMAKE_POLICY_VERSION_MINIMUM' "$f"; then
-    sed -i -E 's/^[[:space:]]*cmake[[:space:]]/cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 /' "$f"
-    echo "patched: $f"
-    PATCHED=$((PATCHED+1))
-  fi
-done < <(find ./scripts -type f -name "*.sh" -print0 2>/dev/null || true)
-
-echo "Patched files count: $PATCHED"
-
-rm -rf ./.tmp ./prebuilt ./build ./android/.gradle 2>/dev/null || true
-
+# -------------------------------------------------
+# 1) Run once ONLY to download sources (allow fail)
+# -------------------------------------------------
 set +e
 ./android.sh "${FLAGS[@]}"
-RC=$?
 set -e
 
-if [ $RC -ne 0 ]; then
-  echo "❌ ffmpeg-kit failed (rc=$RC). Tail build.log:"
-  tail -n 250 build.log 2>/dev/null || true
-  exit $RC
+# -------------------------------------------------
+# 2) Patch cpu-features CMakeLists.txt
+# -------------------------------------------------
+CPU_CMAKE="src/cpu-features/CMakeLists.txt"
+
+if [ -f "$CPU_CMAKE" ]; then
+  echo "Patching $CPU_CMAKE"
+  sed -i 's/cmake_minimum_required(VERSION 3\.[0-4])/cmake_minimum_required(VERSION 3.5)/' "$CPU_CMAKE"
+else
+  echo "❌ cpu-features CMakeLists.txt not found!"
+  exit 1
 fi
 
+# -------------------------------------------------
+# 3) Rebuild cpu-features explicitly
+# -------------------------------------------------
+./android.sh "${FLAGS[@]}" --rebuild-cpu-features
+
+# -------------------------------------------------
+# 4) Collect AAR
+# -------------------------------------------------
 mkdir -p "$ROOT/app/libs"
 AAR_PATH="$(find prebuilt -type f -name "*.aar" | head -n 1)"
-if [ -z "${AAR_PATH}" ]; then
-  echo "❌ AAR not found. Tail build.log:"
-  tail -n 250 build.log 2>/dev/null || true
+if [ -z "$AAR_PATH" ]; then
+  echo "❌ FFmpegKit AAR not found"
   exit 1
 fi
 
 cp -v "$AAR_PATH" "$ROOT/app/libs/ffmpeg-kit-built.aar"
-echo "✅ Copied FFmpegKit AAR to app/libs/ffmpeg-kit-built.aar"
+echo "✅ FFmpegKit build completed"
