@@ -9,6 +9,20 @@ export ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT}"
 export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_NDK_ROOT}"
 export ANDROID_NDK="${ANDROID_NDK_HOME}"
 
+# ✅ Force system/SDK CMake (NOT ffmpeg-kit internal cmake)
+SDK_CMAKE="${ANDROID_SDK_ROOT}/cmake/3.22.1/bin/cmake"
+if [ ! -x "$SDK_CMAKE" ]; then
+  echo "❌ SDK cmake not found at: $SDK_CMAKE"
+  exit 1
+fi
+
+export CMAKE="$SDK_CMAKE"
+export CMAKE_COMMAND="$SDK_CMAKE"
+export CMAKE_BIN="$SDK_CMAKE"
+
+echo "Using CMake: $SDK_CMAKE"
+"$SDK_CMAKE" --version
+
 FLAGS=(
   --disable-arm-v7a
   --disable-arm-v7a-neon
@@ -17,46 +31,46 @@ FLAGS=(
   --api-level=26
 )
 
-dump_logs () {
-  echo "==================== ffmpeg-kit build.log (last 300 lines) ===================="
-  tail -n 300 build.log 2>/dev/null || true
-  echo "==================== cpu-features section (grep) ============================="
-  grep -n "cpu-features" -n build.log 2>/dev/null | tail -n 80 || true
-  echo "==============================================================================="
-}
+# Clean (including internal cmake cache)
+rm -rf ./prebuilt ./build ./android/.gradle ./.tmp/cmake 2>/dev/null || true
 
-rm -rf ./prebuilt ./build ./android/.gradle 2>/dev/null || true
+# 🔥 Patch ffmpeg-kit scripts so they NEVER call .tmp/cmake/**/cmake
+echo "Patching ffmpeg-kit scripts to use SDK cmake..."
+grep -RIn "\.tmp/cmake" ./scripts ./android.sh 2>/dev/null || true
+find ./scripts -type f -name "*.sh" -print0 | xargs -0 sed -i -E 's#\./\.tmp/cmake[^ ]*/bin/cmake#cmake#g; s#\.tmp/cmake[^ ]*/bin/cmake#cmake#g'
 
-# 1) ריצה ראשונה כדי שיוריד מקורות (יכול להיכשל)
+# Make sure "cmake" in PATH resolves to SDK cmake (hard link wrapper)
+WRAPDIR="$ROOT/tools/cmakewrap"
+mkdir -p "$WRAPDIR"
+cat > "$WRAPDIR/cmake" <<WRAP
+#!/usr/bin/env bash
+exec "$SDK_CMAKE" "\$@"
+WRAP
+chmod +x "$WRAPDIR/cmake"
+export PATH="$WRAPDIR:$PATH"
+
+echo "which cmake: $(which cmake)"
+cmake --version
+
+# Run
 set +e
 ./android.sh "${FLAGS[@]}"
 RC=$?
 set -e
 
-# 2) Patch לקובץ הנכון
-CPU_CMAKE="src/cpu-features/CMakeLists.txt"
-if [ -f "$CPU_CMAKE" ]; then
-  sed -i 's/cmake_minimum_required(VERSION 3\.[0-4])/cmake_minimum_required(VERSION 3.5)/' "$CPU_CMAKE"
+if [ $RC -ne 0 ]; then
+  echo "❌ ffmpeg-kit failed (rc=$RC). Tail build.log:"
+  tail -n 250 build.log 2>/dev/null || true
+  echo "---- grep tmp/cmake (should be empty) ----"
+  grep -n "\.tmp/cmake" build.log 2>/dev/null | tail -n 50 || true
+  exit $RC
 fi
 
-# 3) ריצה שנייה עם rebuild cpu-features
-set +e
-./android.sh "${FLAGS[@]}" --rebuild-cpu-features
-RC2=$?
-set -e
-
-if [ $RC2 -ne 0 ]; then
-  echo "❌ ffmpeg-kit failed (rc=$RC2)"
-  dump_logs
-  exit $RC2
-fi
-
-# 4) העתקת AAR
 mkdir -p "$ROOT/app/libs"
 AAR_PATH="$(find prebuilt -type f -name "*.aar" | head -n 1)"
 if [ -z "$AAR_PATH" ]; then
-  echo "❌ FFmpegKit AAR not found"
-  dump_logs
+  echo "❌ AAR not found. Tail build.log:"
+  tail -n 250 build.log 2>/dev/null || true
   exit 1
 fi
 
