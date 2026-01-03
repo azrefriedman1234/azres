@@ -8,43 +8,59 @@ export ANDROID_HOME="${ANDROID_SDK_ROOT}"
 export ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT}"
 export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_NDK_ROOT}"
 
-# 🔒 נועלים cmake לקובץ של ה-SDK
-export CMAKE_BIN="${ANDROID_SDK_ROOT}/cmake/3.22.1/bin/cmake"
+FLAGS=(
+  --disable-arm-v7a
+  --disable-arm-v7a-neon
+  --disable-x86
+  --disable-x86-64
+  --api-level=26
+)
 
-echo "== cmake sanity =="
-echo "CMAKE_BIN=$CMAKE_BIN"
-ls -la "$CMAKE_BIN" || true
-which cmake || true
+echo "== cmake used =="
+echo "which cmake: $(which cmake || true)"
 cmake --version || true
-"$CMAKE_BIN" --version || true
-
-# 🔥 עוקף בעיות מדיניות בגרסאות cmake חדשות אם משהו בכל זאת משתמש בהן
-export CMAKE_ARGS="-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
-
-echo "CMAKE_ARGS=$CMAKE_ARGS"
 
 rm -rf ./.tmp ./prebuilt ./build ./android/.gradle 2>/dev/null || true
 
-# arm64 בלבד, בסיסי
+# --- 1) Run once to download sources (may fail on cpu-features) ---
 set +e
-./android.sh \
-  --disable-arm-v7a \
-  --disable-arm-v7a-neon \
-  --disable-x86 \
-  --disable-x86-64 \
-  --api-level=26
+./android.sh "${FLAGS[@]}"
 RC=$?
 set -e
 
 if [ $RC -ne 0 ]; then
-  echo "❌ ffmpeg-kit build failed (rc=$RC). Tail build.log:"
-  tail -n 250 build.log 2>/dev/null || true
-  exit $RC
+  echo "First run failed (rc=$RC). Trying to patch cpu-features CMakeLists..."
+
+  # מצא את CMakeLists הבעייתי (בדרך כלל של cpu-features) ותקן ל-3.5
+  # אנחנו מתקנים רק קבצים שמכילים cmake_minimum_required(VERSION 3.[0-4])
+  FOUND=0
+  while IFS= read -r -d '' f; do
+    if grep -qE 'cmake_minimum_required\\(VERSION[[:space:]]+3\\.[0-4]' "$f"; then
+      echo "Patching: $f"
+      sed -i -E 's/cmake_minimum_required\\(VERSION[[:space:]]+3\\.[0-4]\\)/cmake_minimum_required(VERSION 3.5)/' "$f"
+      FOUND=1
+    fi
+  done < <(find ./src -name CMakeLists.txt -print0 2>/dev/null || true)
+
+  if [ $FOUND -eq 0 ]; then
+    echo "❌ Could not find a CMakeLists.txt to patch under ./src"
+    echo "Tail build.log:"
+    tail -n 200 build.log 2>/dev/null || true
+    exit $RC
+  fi
+
+  echo "== Re-run with rebuild-cpu-features =="
+  # עכשיו נכפה rebuild לספריה הרלוונטית
+  ./android.sh "${FLAGS[@]}" --rebuild-cpu-features
 fi
 
 mkdir -p "$ROOT/app/libs"
 AAR_PATH="$(find prebuilt -type f -name "*.aar" | head -n 1)"
-[ -n "$AAR_PATH" ] || { echo "AAR not found"; exit 1; }
+if [ -z "${AAR_PATH}" ]; then
+  echo "❌ FFmpegKit AAR not found under prebuilt/"
+  tail -n 250 build.log 2>/dev/null || true
+  exit 1
+fi
 
 cp -v "$AAR_PATH" "$ROOT/app/libs/ffmpeg-kit-built.aar"
-echo "✅ Copied FFmpegKit AAR"
+echo "✅ Copied FFmpegKit AAR to app/libs/ffmpeg-kit-built.aar"
