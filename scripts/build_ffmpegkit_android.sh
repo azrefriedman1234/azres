@@ -7,57 +7,64 @@ cd "$FF"
 export ANDROID_HOME="${ANDROID_SDK_ROOT}"
 export ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT}"
 export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_NDK_ROOT}"
+export ANDROID_NDK="${ANDROID_NDK_HOME}"
 
-FLAGS=(
-  --disable-arm-v7a
-  --disable-arm-v7a-neon
-  --disable-x86
-  --disable-x86-64
-  --api-level=26
-)
+# -----------------------------
+# 🔒 CMake wrapper (forces policy flag)
+# -----------------------------
+WRAPDIR="$ROOT/tools/cmakewrap"
+mkdir -p "$WRAPDIR"
 
-echo "== cmake used =="
-echo "which cmake: $(which cmake || true)"
+# בוחר cmake אמיתי (מעדיף SDK cmake 3.22.1 אם קיים)
+REAL_CMAKE="${ANDROID_SDK_ROOT}/cmake/3.22.1/bin/cmake"
+if [ ! -x "$REAL_CMAKE" ]; then
+  REAL_CMAKE="$(command -v cmake || true)"
+fi
+
+cat > "$WRAPDIR/cmake" <<WRAP
+#!/usr/bin/env bash
+set -e
+REAL="$REAL_CMAKE"
+if [ -z "\$REAL" ] || [ ! -x "\$REAL" ]; then
+  echo "❌ Real cmake not found"
+  exit 1
+fi
+
+# Inject policy flag unless user already provided it
+for a in "\$@"; do
+  if [[ "\$a" == *CMAKE_POLICY_VERSION_MINIMUM* ]]; then
+    exec "\$REAL" "\$@"
+  fi
+done
+
+exec "\$REAL" -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "\$@"
+WRAP
+
+chmod +x "$WRAPDIR/cmake"
+export PATH="$WRAPDIR:$PATH"
+
+echo "== Using cmake wrapper =="
+echo "which cmake: $(which cmake)"
 cmake --version || true
+echo "ANDROID_NDK=$ANDROID_NDK"
+echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
+echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
 
 rm -rf ./.tmp ./prebuilt ./build ./android/.gradle 2>/dev/null || true
 
-# --- 1) Run once to download sources (may fail on cpu-features) ---
-set +e
-./android.sh "${FLAGS[@]}"
-RC=$?
-set -e
-
-if [ $RC -ne 0 ]; then
-  echo "First run failed (rc=$RC). Trying to patch cpu-features CMakeLists..."
-
-  # מצא את CMakeLists הבעייתי (בדרך כלל של cpu-features) ותקן ל-3.5
-  # אנחנו מתקנים רק קבצים שמכילים cmake_minimum_required(VERSION 3.[0-4])
-  FOUND=0
-  while IFS= read -r -d '' f; do
-    if grep -qE 'cmake_minimum_required\\(VERSION[[:space:]]+3\\.[0-4]' "$f"; then
-      echo "Patching: $f"
-      sed -i -E 's/cmake_minimum_required\\(VERSION[[:space:]]+3\\.[0-4]\\)/cmake_minimum_required(VERSION 3.5)/' "$f"
-      FOUND=1
-    fi
-  done < <(find ./src -name CMakeLists.txt -print0 2>/dev/null || true)
-
-  if [ $FOUND -eq 0 ]; then
-    echo "❌ Could not find a CMakeLists.txt to patch under ./src"
-    echo "Tail build.log:"
-    tail -n 200 build.log 2>/dev/null || true
-    exit $RC
-  fi
-
-  echo "== Re-run with rebuild-cpu-features =="
-  # עכשיו נכפה rebuild לספריה הרלוונטית
-  ./android.sh "${FLAGS[@]}" --rebuild-cpu-features
-fi
+# arm64 בלבד
+./android.sh \
+  --disable-arm-v7a \
+  --disable-arm-v7a-neon \
+  --disable-x86 \
+  --disable-x86-64 \
+  --api-level=26
 
 mkdir -p "$ROOT/app/libs"
 AAR_PATH="$(find prebuilt -type f -name "*.aar" | head -n 1)"
 if [ -z "${AAR_PATH}" ]; then
   echo "❌ FFmpegKit AAR not found under prebuilt/"
+  echo "Tail build.log:"
   tail -n 250 build.log 2>/dev/null || true
   exit 1
 fi
